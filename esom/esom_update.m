@@ -104,16 +104,16 @@ beta = 0.8;
 Tp = 50;
 
 if (nargin > 2) 
-    epsilon = varargin(1);
+    epsilon = varargin{1};
 end
 if (nargin > 3) 
-    gamma = varargin(2);
+    gamma = varargin{2};
 end 
 if (nargin > 4)     
-    beta = varargin(3);
+    beta = varargin{3};
 end
 if (nargin > 5)
-    Tp = varargin(4);
+    Tp = varargin{4};
 end
 
 if (size(S.codebook,1) == 0)
