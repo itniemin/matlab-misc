@@ -96,7 +96,7 @@ if isempty(N)
 end
 N = N + 1;
 
-error(nargchk(2,5,nargin));
+error(nargchk(2,6,nargin));
 
 epsilon = 0.2;
 gamma = 0.2;
