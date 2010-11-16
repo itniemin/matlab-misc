@@ -122,9 +122,7 @@ if (size(S.codebook,1) == 0)
     % New map
     S.codebook = [x];
     bmu = 1;
-    S.ids = [S.ids; S.next_id];
-    S.next_id = S.next_id + 1;
-    S.con(S.ids(bmu), S.ids(bmu)) = 1;
+    S.con(bmu, bmu) = 1;
     return;
 end
 
@@ -137,8 +135,6 @@ dists = pdist2(S.codebook, x);
 %%% Insertion of a new prototype
 if (all(dists > epsilon))
     S.codebook = [S.codebook; x];
-    S.ids = [S.ids; S.next_id];
-    S.next_id = S.next_id + 1;
     bmu = size(S.codebook,1); % Last node in the codebook
 
     % Find the two closest prototypes
@@ -151,15 +147,15 @@ if (all(dists > epsilon))
     if (n1 == n2)
         % This happens when codebook has two prototypes
         neighbours = [bmu; n1];
-        S.con(S.ids(bmu), S.ids(n1)) = inf;
-        S.con(S.ids(n1), S.ids(bmu)) = inf;
+        S.con(bmu, n1) = inf;
+        S.con(n1, bmu) = inf;
     else
         neighbours = [bmu; n1; n2];
-        S.con(S.ids(bmu), S.ids(n1)) = inf;
-        S.con(S.ids(n1), S.ids(bmu)) = inf;
+        S.con(bmu, n1) = inf;
+        S.con(n1, bmu) = inf;
         
-        S.con(S.ids(bmu), S.ids(n2)) = inf;
-        S.con(S.ids(n2), S.ids(bmu)) = inf;
+        S.con(bmu, n2) = inf;
+        S.con(n2, bmu) = inf;
     end
 end
 
@@ -170,20 +166,14 @@ if (bmu == 0)
     [~, bmu2] = min(dists);
     dists(bmu) = d1; 
     % Make connection
-    if (S.con(S.ids(bmu), S.ids(bmu2)) == 0)
-        S.con(S.ids(bmu), S.ids(bmu2)) = inf;
-        S.con(S.ids(bmu2), S.ids(bmu)) = inf;
-    end
-    % TODO: Make sure that this is not necessary
-    if (S.con(S.ids(bmu), S.ids(bmu)) == 0)
-        S.con(S.ids(bmu), S.ids(bmu)) = inf;
+    if (S.con(bmu, bmu2) == 0)
+        S.con(bmu, bmu2) = inf;
+        S.con(bmu2, bmu) = inf;
     end
 
     % Find the neighbouring prototypes
-    inds = find(S.con(:, S.ids(bmu)));
-    for k=1:size(inds,1)
-       neighbours(k) = find(S.ids == inds(k), 1);
-    end
+    neighbours = find(S.con(:, bmu));
+    
 end
 
 %%% Calculate activations and update prototypes
@@ -199,7 +189,7 @@ S.codebook(neighbours,:) = S.codebook(neighbours,:) + Delta;
 idx = neighbours==bmu; % Index of BMU in the neighbour set
 for k=1:length(neighbours)
     
-    original = S.con(S.ids(bmu), S.ids(neighbours(k)));
+    original = S.con(bmu, neighbours(k));
     activation = A(idx)*A(k); 
     value = 0;
     if original == inf
@@ -208,13 +198,17 @@ for k=1:length(neighbours)
     else
        value = beta*original + (1-beta)*activation;
     end
-    S.con(S.ids(bmu), S.ids(neighbours(k))) = value;
-    S.con(S.ids(neighbours(k)), S.ids(bmu)) = value;
+    S.con(bmu, neighbours(k)) = value;
+    S.con(neighbours(k), bmu) = value;    
 end
 
 %%% Connection pruning
-if (mod(N,Tp) == 0) 
-    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
+if (mod(N,Tp) == 0)
+    min_value = min(S.con(S.con>0));
+    [row, col] = find(S.con == min_value, 1);
+    S.con(row,col) = 0;
+    S.con(col,row) = 0;
+%    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
 end
 
 end
