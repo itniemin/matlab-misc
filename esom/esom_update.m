@@ -60,7 +60,9 @@ function [ S ] = esom_update(S, x, varargin)
 %  - Check if there are papers on how to adaptively change the
 %    parameters and implement them.
 %  - Remember to make pruning connections symmetric
-%  - M(:,i) is faster than M(i,:); 
+%  - M(:,i) is faster than M(i,:);
+%  - Connection pruning might delete nodes connection to itself, which
+%  leads the node not showing in the neighbourhood. Fix this properly.
 %
 %  Micro-optimization
 %  - We don't actually need the distances pdists2 gives, the squared
@@ -171,6 +173,10 @@ if (bmu == 0)
     if (S.con(S.ids(bmu), S.ids(bmu2)) == 0)
         S.con(S.ids(bmu), S.ids(bmu2)) = inf;
         S.con(S.ids(bmu2), S.ids(bmu)) = inf;
+    end
+    % TODO: Make sure that this is not necessary
+    if (S.con(S.ids(bmu), S.ids(bmu)) == 0)
+        S.con(S.ids(bmu), S.ids(bmu)) = inf;
     end
 
     % Find the neighbouring prototypes
