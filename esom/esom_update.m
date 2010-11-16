@@ -202,13 +202,26 @@ for k=1:length(neighbours)
     S.con(neighbours(k), bmu) = value;    
 end
 
-%%% Connection pruning
+%%% Connection and node pruning
 if (mod(N,Tp) == 0)
     min_value = min(S.con(S.con>0));
     [row, col] = find(S.con == min_value, 1);
-    S.con(row,col) = 0;
-    S.con(col,row) = 0;
+    if (row ~= col)
+        S.con(row,col) = 0;
+        S.con(col,row) = 0;
+    end
 %    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
+
+
+    % We delete at most one connection, so there can be at most one
+    % orphaned node (except when there are just two and their connection
+    % has just been removed)
+    nnzcol = arrayfun(@(k) nnz(S.con(:,k)), 1:size(S.con,1));
+    deletable = find(nnzcol == 1, 1);
+    S.codebook(deletable,:) = 0;
+    S.con(deletable,:) = [];
+    S.con(:,deletable) = [];
+
 end
 
 end
