@@ -122,7 +122,7 @@ if (size(S.codebook,1) == 0)
     % New map
     S.codebook = [x];
     bmu = 1;
-    S.con(bmu, bmu) = 1;
+    S.con(bmu, bmu) = inf;
     return;
 end
 
@@ -170,6 +170,10 @@ if (bmu == 0)
         S.con(bmu, bmu2) = inf;
         S.con(bmu2, bmu) = inf;
     end
+    % TODO: Solve this problem properly
+    if (S.con(bmu, bmu) == 0)
+        S.con(bmu, bmu) = inf;
+    end
 
     % Find the neighbouring prototypes
     neighbours = find(S.con(:, bmu));
@@ -186,9 +190,12 @@ Delta = gamma/a_sum*bsxfun(@times,A,Di); % \delta_i
 S.codebook(neighbours,:) = S.codebook(neighbours,:) + Delta;
 
 %%% Update network connection strengths
-idx = neighbours==bmu; % Index of BMU in the neighbour set
+idx = find(neighbours==bmu); % Index of BMU in the neighbour set
 for k=1:length(neighbours)
-    
+    if k == idx
+        % TODO: We don't update the node's connection to itself
+        continue
+    end
     original = S.con(bmu, neighbours(k));
     activation = A(idx)*A(k); 
     value = 0;
@@ -198,6 +205,7 @@ for k=1:length(neighbours)
     else
        value = beta*original + (1-beta)*activation;
     end
+    
     S.con(bmu, neighbours(k)) = value;
     S.con(neighbours(k), bmu) = value;    
 end
@@ -206,9 +214,10 @@ end
 if (mod(N,Tp) == 0)
     min_value = min(S.con(S.con>0));
     [row, col] = find(S.con == min_value, 1);
-    if (row ~= col)
+    if (min_value < inf)
         S.con(row,col) = 0;
         S.con(col,row) = 0;
+        % fprintf(1,'Removing %d-%d: %f\n', row, col, full(min_value));
     end
 %    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
 
@@ -216,12 +225,15 @@ if (mod(N,Tp) == 0)
     % We delete at most one connection, so there can be at most one
     % orphaned node (except when there are just two and their connection
     % has just been removed)
+    
     nnzcol = arrayfun(@(k) nnz(S.con(:,k)), 1:size(S.con,1));
-    deletable = find(nnzcol == 1, 1);
-    S.codebook(deletable,:) = 0;
-    S.con(deletable,:) = [];
-    S.con(:,deletable) = [];
-
+    if (any(nnzcol>1))
+        deletable = find(nnzcol == 1, 1);
+        % fprintf(1,'Removing %d\n', deletable);
+        S.codebook(deletable,:) = [];
+        S.con(deletable,:) = [];
+        S.con(:,deletable) = [];
+    end
 end
 
 end
