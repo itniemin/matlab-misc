@@ -1,16 +1,16 @@
-function [ S ] = esom_update(S, x, varargin)
+function [ S ] = esom_update(S, X, varargin)
 %ESOM_UPDATE Update an Evolving Self-Organizing Map
 %   Updates an ESOM given in S when presented with an input (row) vector
-%   x. Returns the updated map. The map S is a struct with at least the
+%   X. Returns the updated map. The map S is a struct with at least the
 %   following members: codebook (initially []), ids (initially []),
 %   next_id (initially 1), con (initially an empty (square) sparse
 %   matrix).
 %
-%   S = esom_update(S, x) returns the updated map S when presented an
-%   input vector x.
+%   S = esom_update(S, X) returns the updated map S when presented an
+%   input vector X.
 %
-%   S = esom_update(S, x, epsilon, gamma, beta, Tp) returns the updated
-%   map S when presented an input vector x, given threshold (epsilon),
+%   S = esom_update(S, X, epsilon, gamma, beta, Tp) returns the updated
+%   map S when presented an input vector X, given threshold (epsilon),
 %   learning rate (gamma), forgetting constant (beta), and pruning
 %   constant (Tp). Any number of extra parameters can be omitted. Note
 %   that the syntax is likely to change in favor of a key/value-type of
@@ -96,7 +96,6 @@ persistent N;
 if isempty(N)
    N = 0;
 end
-N = N + 1;
 
 error(nargchk(2,6,nargin));
 
@@ -104,6 +103,8 @@ epsilon = 0.2;
 gamma = 0.2;
 beta = 0.8;
 Tp = 50;
+
+first_idx = 1;
 
 if (nargin > 2) 
     epsilon = varargin{1};
@@ -120,127 +121,134 @@ end
 
 if (size(S.codebook,1) == 0)
     % New map
-    S.codebook = [x];
+    N = N + 1;
+    S.codebook = [X(1,:)];
     bmu = 1;
     S.con(bmu, bmu) = inf;
-    return;
+    if (size(X,1) > 1)
+        first_idx = 2;
+    else
+        return;
+    end
 end
 
-neighbours = [];
-bmu = 0;
-bmu2 = 0; % The second-best matching unit
-
-dists = pdist2(S.codebook, x);
-
-%%% Insertion of a new prototype
-if (all(dists > epsilon))
-    S.codebook = [S.codebook; x];
-    bmu = size(S.codebook,1); % Last node in the codebook
-
-    % Find the two closest prototypes
-    [d1, n1] = min(dists);
-    dists(n1) = inf; % Ruin the dists matrix
-    [~, n2] = min(dists);
-    dists(n1) = d1; % Fix the dists matrix
-
-    % Connect new prototype to the two closest prototypes
-    if (n1 == n2)
-        % This happens when codebook has two prototypes
-        neighbours = [bmu; n1];
-        S.con(bmu, n1) = inf;
-        S.con(n1, bmu) = inf;
-    else
-        neighbours = [bmu; n1; n2];
-        S.con(bmu, n1) = inf;
-        S.con(n1, bmu) = inf;
+for n=first_idx:size(X,1)    
+    x = X(n,:); % Maybe replace all occurences of x with this?
+    N = N + 1;
+    neighbours = [];
+    bmu = 0;
+    bmu2 = 0; % The second-best matching unit
+    
+    dists = pdist2(S.codebook, x);
+    
+    %%% Insertion of a new prototype
+    if (all(dists > epsilon))
+        S.codebook = [S.codebook; x];
+        bmu = size(S.codebook,1); % Last node in the codebook
         
-        S.con(bmu, n2) = inf;
-        S.con(n2, bmu) = inf;
-    end
-end
-
-%%% Find the BMU and the second-BMU if no node was inserted
-if (bmu == 0)
-    [d1, bmu] = min(dists);   
-    dists(bmu) = inf;    
-    [~, bmu2] = min(dists);
-    dists(bmu) = d1; 
-    % Make connection
-    if (S.con(bmu, bmu2) == 0)
-        S.con(bmu, bmu2) = inf;
-        S.con(bmu2, bmu) = inf;
-    end
-    % TODO: Solve this problem properly
-    if (S.con(bmu, bmu) == 0)
+        % Find the two closest prototypes
+        [d1, n1] = min(dists);
+        dists(n1) = inf; % Ruin the dists matrix
+        [~, n2] = min(dists);
+        dists(n1) = d1; % Fix the dists matrix
+        
+        % Connect the new node to itself
         S.con(bmu, bmu) = inf;
+        
+        % Connect new prototype to the two closest prototypes
+        if (n1 == n2)
+            % This happens when codebook has two prototypes
+            neighbours = [bmu; n1];
+            S.con(bmu, n1) = inf;
+            S.con(n1, bmu) = inf;
+        else
+            neighbours = [bmu; n1; n2];
+            S.con(bmu, n1) = inf;
+            S.con(n1, bmu) = inf;
+            
+            S.con(bmu, n2) = inf;
+            S.con(n2, bmu) = inf;
+        end
     end
-
-    % Find the neighbouring prototypes
-    neighbours = find(S.con(:, bmu));
+    
+    %%% Find the BMU and the second-BMU if no node was inserted
+    if (bmu == 0)
+        [d1, bmu] = min(dists);
+        dists(bmu) = inf;
+        [~, bmu2] = min(dists);
+        dists(bmu) = d1;
+        % Make connection
+        if (S.con(bmu, bmu2) == 0)
+            S.con(bmu, bmu2) = inf;
+            S.con(bmu2, bmu) = inf;
+        end
+        
+        % Find the neighbouring prototypes
+        neighbours = find(S.con(:, bmu));
+        
+    end
+    
+    %%% Calculate activations and update prototypes
+    Di = bsxfun(@minus, x, S.codebook(neighbours,:)); % (x - w_i)
+    DNi = sum(Di.*Di,2); % ||x - w_i||^2
+    A = exp(-2*DNi/epsilon^2); % a_i
+    a_sum = sum(A);
+    
+    Delta = gamma/a_sum*bsxfun(@times,A,Di); % \delta_i
+    S.codebook(neighbours,:) = S.codebook(neighbours,:) + Delta;
+    
+    %%% Update network connection strengths
+    idx = find(neighbours==bmu); % Index of BMU in the neighbour set
+    for k=1:length(neighbours)
+        if k == idx
+            % We don't update the node's connection to itself
+            continue
+        end
+        original = S.con(bmu, neighbours(k));
+        activation = A(idx)*A(k);
+        value = 0;
+        if original == inf
+            % Initialization for new connections
+            value = activation;
+        else
+            value = beta*original + (1-beta)*activation;
+        end
+        
+        S.con(bmu, neighbours(k)) = value;
+        S.con(neighbours(k), bmu) = value;
+    end
+    
+    %%% Connection and node pruning
+    if (mod(N,Tp) == 0)
+        min_value = min(S.con(S.con>0));
+        [row, col] = find(S.con == min_value, 1);
+        if (min_value < inf)
+            S.con(row,col) = 0;
+            S.con(col,row) = 0;
+            % fprintf(1,'Removing %d-%d: %f\n', row, col, full(min_value));
+        end
+        %    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
+        
+        
+        % We delete at most one connection, so there can be at most one
+        % orphaned node (except when there are just two and their connection
+        % has just been removed)
+        
+        nnzcol = arrayfun(@(k) nnz(S.con(:,k)), 1:size(S.con,1));
+        if (any(nnzcol>1))
+            deletable = find(nnzcol == 1, 1);
+            % fprintf(1,'Removing %d\n', deletable);
+            S.codebook(deletable,:) = [];
+            S.con(deletable,:) = [];
+            S.con(:,deletable) = [];
+        end
+    end
     
 end
 
-%%% Calculate activations and update prototypes
-Di = bsxfun(@minus, x, S.codebook(neighbours,:)); % (x - w_i)
-DNi = sum(Di.*Di,2); % ||x - w_i||^2
-A = exp(-2*DNi/epsilon^2); % a_i
-a_sum = sum(A);
-
-Delta = gamma/a_sum*bsxfun(@times,A,Di); % \delta_i
-S.codebook(neighbours,:) = S.codebook(neighbours,:) + Delta;
-
-%%% Update network connection strengths
-idx = find(neighbours==bmu); % Index of BMU in the neighbour set
-for k=1:length(neighbours)
-    if k == idx
-        % TODO: We don't update the node's connection to itself
-        continue
-    end
-    original = S.con(bmu, neighbours(k));
-    activation = A(idx)*A(k); 
-    value = 0;
-    if original == inf
-       % Initialization for new connections
-       value = activation;
-    else
-       value = beta*original + (1-beta)*activation;
-    end
-    
-    S.con(bmu, neighbours(k)) = value;
-    S.con(neighbours(k), bmu) = value;    
 end
-
-%%% Connection and node pruning
-if (mod(N,Tp) == 0)
-    min_value = min(S.con(S.con>0));
-    [row, col] = find(S.con == min_value, 1);
-    if (min_value < inf)
-        S.con(row,col) = 0;
-        S.con(col,row) = 0;
-        % fprintf(1,'Removing %d-%d: %f\n', row, col, full(min_value));
-    end
-%    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
-
-
-    % We delete at most one connection, so there can be at most one
-    % orphaned node (except when there are just two and their connection
-    % has just been removed)
-    
-    nnzcol = arrayfun(@(k) nnz(S.con(:,k)), 1:size(S.con,1));
-    if (any(nnzcol>1))
-        deletable = find(nnzcol == 1, 1);
-        % fprintf(1,'Removing %d\n', deletable);
-        S.codebook(deletable,:) = [];
-        S.con(deletable,:) = [];
-        S.con(:,deletable) = [];
-    end
-end
-
-end
-
-
-
-
-    
-    
-    
+ 
+ 
+ 
+ 
+ 
