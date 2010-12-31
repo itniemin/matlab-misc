@@ -2,18 +2,19 @@ function [ S ] = esom_update(S, X, varargin)
 %ESOM_UPDATE Update an Evolving Self-Organizing Map
 %   Updates an ESOM given in S when presented with an input (row) vector
 %   X. Returns the updated map. The map S is a struct with at least the
-%   following members: codebook (initially []), ids (initially []),
-%   next_id (initially 1), con (initially an empty (square) sparse
-%   matrix).
+%   following members: codebook (initially []), con (initially an empty
+%   (square) sparse matrix).
 %
 %   S = esom_update(S, X) returns the updated map S when presented an
-%   input vector X.
+%   input vector (or a matrix) X. In case a matrix is given, each row of
+%   the matrix is considered an input vector. The performance difference is
+%   small, but you can avoid writing for loops to call ESOM_UPDATE.
 %
 %   S = esom_update(S, X, epsilon, gamma, beta, Tp) returns the updated
-%   map S when presented an input vector X, given threshold (epsilon),
-%   learning rate (gamma), forgetting constant (beta), and pruning
-%   constant (Tp). Any number of extra parameters can be omitted. Note
-%   that the syntax is likely to change in favor of a key/value-type of
+%   map S when presented an input vector/matrix X, given threshold
+%   (epsilon), learning rate (gamma), forgetting constant (beta), and
+%   pruning constant (Tp). Any number of extra parameters can be omitted.
+%   Note that the syntax is likely to change in favor of a key/value-type 
 %   value passing.
 %  
 %   The implementation is based on the paper
@@ -24,31 +25,18 @@ function [ S ] = esom_update(S, X, varargin)
 %   A valid initialization of the map structure is:
 %     sM = struct;
 %     sM.codebook = [];
-%     sM.ids = [];
-%     sM.next_id = 1;
-%     sM.con = sparse(1000,1000); % The size 
+%     sM.con = sparse(1000,1000);
   
 %  Notes for the reader:
-%    The ids vector keeps a list of connection matrix (con) indices for
-%    codebook vectors. Removing a prototype means that its codebook and
-%    ids entries are removed and its connections are zeroed:
-%    S.con(S.ids(k),:) = 0; S.con(:,S.ids(k)) = 0;
-%    S.codebook(k,:) = [];
-%    S.ids(k) = [];
-%
+
 %    The new connections are assigned a weight "inf" as a placeholder.
 %    The value is replaced by the real value when the network strengths
-%    are updated.
+%    are updated. The exception is formed by the diagonal entries (the
+%    node's connection to itself), which are kept at infinity; the value is
+%    not used anywhere.
 %
 %  TODO list:
-%  - Check if modifying the sparse matrix by removing columns and rows
-%    is not too expensive; if not, remove the whole inds-construct and
-%    keep the codebook and connection matrix indices in sync by cutting
-%    away the relevant parts of the connection matrix itself. [DO THIS]
 %  - Make a separate function for pruning connections/nodes.
-%  - Implement node pruning.   
-%  - Make the function accept a matrix as an input to avoid the cost of
-%    unnecessary function calls when data is available in advance.
 %  - Add key/value option handling.
 %  - Include options for variations in the algorithm:
 %    - How the neighbourhood is determined
@@ -61,32 +49,18 @@ function [ S ] = esom_update(S, X, varargin)
 %    parameters and implement them.
 %  - Remember to make pruning connections symmetric
 %  - M(:,i) is faster than M(i,:);
-%  - Connection pruning might delete nodes connection to itself, which
-%  leads the node not showing in the neighbourhood. Fix this properly.
 %
 %  Micro-optimization
 %  - We don't actually need the distances pdists2 gives, the squared
 %    distance would be enough.
 %  - The connection matrix is symmetric, so we could only keep track of
-%    the other half, but this means added logic when fiddling with the indices.
+%    the other half, but this means added logic when fiddling with the
+%    indices.
 %
 %  Aesthetics
 %  - The way of finding three smallest values is ugly.
 %  - Rename con to something more descriptive
 %
-%  Long-term problems
-%  - Memory usage should not grow if the map size stays about constant.
-%    Check if there are issues related to this in using MATLABs sparse.
-%    Consider packing the sparse matrix now and then, if necessary. This
-%    would also partially solve the reuse of indices issue.
-%  - Theoretically, the map should be able to accept any number of
-%    nodes in its lifetime. Reuse of map index values should be made
-%    possible (also, the indices should not be doubles) and a maximum
-%    amount of nodes should be set at some very high value
-%  - Node reuse could also be solved by keeping a list of removed node
-%    indices, so that small integers would be preferred when reusing
-%    nodes. In all cases, remember to zero the relevant parts of the
-%    connection matrix.
 %
 %  Copyright 2010 Ilari Nieminen <ilari.t.nieminen@iki.fi>
 %  Version 0.01, 20.10.2010
@@ -99,12 +73,13 @@ end
 
 error(nargchk(2,6,nargin));
 
+% Default parameter values
 epsilon = 0.2;
 gamma = 0.2;
 beta = 0.8;
 Tp = 50;
 
-first_idx = 1;
+
 
 if (nargin > 2) 
     epsilon = varargin{1};
@@ -119,12 +94,15 @@ if (nargin > 5)
     Tp = varargin{4};
 end
 
+first_idx = 1;
+
 if (size(S.codebook,1) == 0)
     % New map
     N = N + 1;
     S.codebook = [X(1,:)];
     bmu = 1;
     S.con(bmu, bmu) = inf;
+    % Continue from next sample if X is a matrix, otherwise we're done.
     if (size(X,1) > 1)
         first_idx = 2;
     else
@@ -133,10 +111,10 @@ if (size(S.codebook,1) == 0)
 end
 
 for n=first_idx:size(X,1)    
-    x = X(n,:); % Maybe replace all occurences of x with this?
+    x = X(n,:);
     N = N + 1;
     neighbours = [];
-    bmu = 0;
+    bmu = 0; % BMU
     bmu2 = 0; % The second-best matching unit
     
     dists = pdist2(S.codebook, x);
@@ -177,7 +155,7 @@ for n=first_idx:size(X,1)
         dists(bmu) = inf;
         [~, bmu2] = min(dists);
         dists(bmu) = d1;
-        % Make connection
+        % Make connection to the closest node
         if (S.con(bmu, bmu2) == 0)
             S.con(bmu, bmu2) = inf;
             S.con(bmu2, bmu) = inf;
@@ -225,19 +203,15 @@ for n=first_idx:size(X,1)
         if (min_value < inf)
             S.con(row,col) = 0;
             S.con(col,row) = 0;
-            % fprintf(1,'Removing %d-%d: %f\n', row, col, full(min_value));
         end
-        %    S.con(S.con < 2*min(S.con(S.con>0))) = 0;
-        
         
         % We delete at most one connection, so there can be at most one
-        % orphaned node (except when there are just two and their connection
-        % has just been removed)
+        % orphaned node (except when there are just two and their
+        % connection has just been removed)
         
         nnzcol = arrayfun(@(k) nnz(S.con(:,k)), 1:size(S.con,1));
         if (any(nnzcol>1))
             deletable = find(nnzcol == 1, 1);
-            % fprintf(1,'Removing %d\n', deletable);
             S.codebook(deletable,:) = [];
             S.con(deletable,:) = [];
             S.con(:,deletable) = [];
