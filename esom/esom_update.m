@@ -79,8 +79,7 @@ gamma = 0.2;
 beta = 0.8;
 Tp = 50;
 
-
-
+% Handle parameters
 if (nargin > 2) 
     epsilon = varargin{1};
 end
